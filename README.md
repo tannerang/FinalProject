@@ -29,3 +29,15 @@ $ forge test
 | Base Token 餘額  | a1    |   a2  |
 | Quote Token 餘額 | b1    |   b2  |
 
+**Balancer: Spot Price Calc**
+
+<img width="124" alt="image" src="https://github.com/tannerang/FinalProject/assets/57789692/80447c0b-cad2-4851-846d-612f9e23aa1e">
+
+**Balancer: Out-Given-In**
+
+<img width="253" alt="image" src="https://github.com/tannerang/FinalProject/assets/57789692/7abf0153-c470-4662-92a7-b38889a8b54d">
+
+**Balancer: In-Given-Out**
+
+<img width="257" alt="image" src="https://github.com/tannerang/FinalProject/assets/57789692/7400c51f-14e1-409e-b722-9a9051cb3297">
+
