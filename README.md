@@ -1,66 +1,30 @@
-## Foundry
+## 專案簡介
+- 合約支援 UniswapV2 之間與 Balancer BPool 和 UniswapV2 之間的 AMM 套利。
+- 鑑於目前 Balancer flashloan 處於 0% 交易手續費狀態，以及 Balancer BPool (0.001% - 10%) 容易擁有相較 UniswapV2 Pool (0.3%) 更低的交易手續費，故選擇支援 Balancer AMM，可選擇的池子可參考此連結(https://pools.balancer.exchange/#/explore)
 
-**Foundry is a blazing fast, portable and modular toolkit for Ethereum application development written in Rust.**
+## 流程說明
+套利使用 Balancer 的 Flashloan 功能，套利流程為：
+- 檢查同一交易對 (e.g. BAL/WETH) 在不同 AMM (Pair0 和 Pair1) 中是否存在價差
+- 假設 Pair0 和 Pair1 之間存在差價，合約計算兩個 pair 中的 Quote Token 價格
+- 令 Pair0 為 lowerPrice Pool，Pair1 為 higherPrice Pool
+- 計算 Pair0 和 Pair1 中最佳的 borrowAmount (Quote Token Amount) 使套利收益最大化。
+- 藉由 borrowAmount 推算出 Pair0 的 amountIn (Base Token) 與 Pair1 的 amountOut (Base Token)
+- 執行 makeFlashLoan，透過 Balancer Flashloan 借出數量為 amountIn 的 Base Token，
+- 在 receiveFlashLoan 中向 lowerPrice Pool 買入 amountIn 數量的 Base Token， 接著向 Pair1 中賣出 amountOut 數量的 Base Token，最後 repayFlashloan amountIn 數量的 Base Token
+- (amountOut - amountIn) 的 Base Token 即為本次交易淨利
 
-Foundry consists of:
-
--   **Forge**: Ethereum testing framework (like Truffle, Hardhat and DappTools).
--   **Cast**: Swiss army knife for interacting with EVM smart contracts, sending transactions and getting chain data.
--   **Anvil**: Local Ethereum node, akin to Ganache, Hardhat Network.
--   **Chisel**: Fast, utilitarian, and verbose solidity REPL.
-
-## Documentation
-
-https://book.getfoundry.sh/
-
-## Usage
-
-### Build
-
-```shell
-$ forge build
+## 執行說明
 ```
-
-### Test
-
-```shell
+$ git clone https://github.com/tannerang/FinalProject.git
+$ cd FinalProject
+$ forge install
 $ forge test
 ```
 
-### Format
+## 數學計算
 
-```shell
-$ forge fmt
-```
+|                 | Pair0 | Pair1 |
+| :---------------| :---- | :---- |
+| Base Token 餘額  | a1    |   a2  |
+| Quote Token 餘額 | b1    |   b2  |
 
-### Gas Snapshots
-
-```shell
-$ forge snapshot
-```
-
-### Anvil
-
-```shell
-$ anvil
-```
-
-### Deploy
-
-```shell
-$ forge script script/Counter.s.sol:CounterScript --rpc-url <your_rpc_url> --private-key <your_private_key>
-```
-
-### Cast
-
-```shell
-$ cast <subcommand>
-```
-
-### Help
-
-```shell
-$ forge --help
-$ anvil --help
-$ cast --help
-```
