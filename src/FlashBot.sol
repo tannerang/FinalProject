@@ -1,16 +1,13 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.13;
 
-import '@openzeppelin/contracts/token/ERC20/IERC20.sol';
-import '@openzeppelin/contracts/token/ERC20//utils/SafeERC20.sol';
-import '@openzeppelin/contracts/access/Ownable.sol';
-import '@openzeppelin/contracts/utils/structs/EnumerableSet.sol';
-
-import './interfaces/IUniswapV2Pair.sol';
-import './interfaces/IWETH.sol';
+import "@openzeppelin/contracts/access/Ownable.sol";
+import "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
+import "balancer-v2-monorepo/pkg/interfaces/contracts/vault/IVault.sol";
+import "balancer-v2-monorepo/pkg/interfaces/contracts/vault/IFlashLoanRecipient.sol";
+import "./interfaces/IUniswapV2Pair.sol";
+import "./interfaces/IBPool.sol";
 import { console2 } from "forge-std/Test.sol";
-
-//import '../lib/library/Decimal.sol';
 
 struct OrderedReserves {
     uint256 a1; // base asset
@@ -19,12 +16,24 @@ struct OrderedReserves {
     uint256 b2;
 }
 
-struct ArbitrageInfo {
+struct DiffPoolInfo {
     address baseToken;
     address quoteToken;
     bool baseTokenSmaller;
     address lowerPool; // pool with lower price, denominated in quote asset
     address higherPool; // pool with higher price, denominated in quote asset
+    uint spotUPrice;
+    uint spotBPrice;
+}
+
+struct SamePoolInfo {
+    address baseToken;
+    address quoteToken;
+    bool baseTokenSmaller;
+    address lowerPool; // pool with lower price, denominated in quote asset
+    address higherPool; // pool with higher price, denominated in quote asset
+    uint price0;
+    uint price1;
 }
 
 struct CallbackData {
@@ -35,23 +44,27 @@ struct CallbackData {
     address debtToken;
     uint256 debtAmount;
     uint256 debtTokenOutAmount;
+    uint256 borrowAmount;
+    uint256 spotUPrice;
+    uint256 spotBPrice;
 }
 
-contract FlashBot is Ownable {
-    //using Decimal for Decimal.D256;
-    //using SafeMath for uint256;
-    using SafeERC20 for IERC20;
+contract FlashBot is IFlashLoanRecipient, Ownable {
+
     using EnumerableSet for EnumerableSet.AddressSet;
 
-    // ACCESS CONTROL
-    // Only the `permissionedPairAddress` may call the `uniswapV2Call` function
-    address permissionedPairAddress = address(1);
-
-    // WETH on ETH or WBNB on BSC
-    address immutable WETH;
+    // BALANCER VAULT
+    address public VAULT_ADDRESS = 0xBA12222222228d8Ba445958a75a0704d566BF2C8;
+    IVault private vault = IVault(VAULT_ADDRESS);
+    
+    // BCONST USED
+    uint public constant BONE = 10**18;
 
     // AVAILABLE BASE TOKENS
     EnumerableSet.AddressSet baseTokens;
+
+    // INIT BASE TOKEN
+    address public WETH;
 
     event Withdrawn(address indexed to, uint256 indexed value);
     event BaseTokenAdded(address indexed token);
@@ -64,14 +77,7 @@ contract FlashBot is Ownable {
 
     receive() external payable {}
 
-    /// @dev Redirect uniswap callback function
-    /// The callback function on different DEX are not same, so use a fallback to redirect to uniswapV2Call
-    fallback(bytes calldata _input) external returns (bytes memory) {
-        (address sender, uint256 amount0, uint256 amount1, bytes memory data) = abi.decode(_input[4:], (address, uint256, uint256, bytes));
-        uniswapV2Call(sender, amount0, amount1, data);
-    }
-
-    function withdraw() external {
+    function withdraw() external onlyOwner {
         uint256 balance = address(this).balance;
         if (balance > 0) {
             payable(owner()).transfer(balance);
@@ -136,8 +142,24 @@ contract FlashBot is Ownable {
             : (false, pool0Token1, pool0Token0);
     }
 
-    /// @dev Compare price denominated in quote token between two pools
-    /// We borrow base token by using flash swap from lower price pool and sell them to higher price pool
+   function isbaseTokenSmallerWithBPool(address uniPool)
+        internal
+        view
+        returns (
+            bool baseSmaller,
+            address baseToken,
+            address quoteToken
+        )
+    {
+        (address uniPoolToken0, address uniPoolToken1) = (IUniswapV2Pair(uniPool).token0(), IUniswapV2Pair(uniPool).token1());
+        require(uniPoolToken0 < uniPoolToken1, 'Non standard uniswap AMM pair');
+        require(baseTokensContains(uniPoolToken0) || baseTokensContains(uniPoolToken1), 'No base token in pair');
+
+        (baseSmaller, baseToken, quoteToken) = baseTokensContains(uniPoolToken0)
+            ? (true, uniPoolToken0, uniPoolToken1)
+            : (false, uniPoolToken1, uniPoolToken0);
+    }
+
     function getOrderedReserves(
         address pool0,
         address pool1,
@@ -148,20 +170,15 @@ contract FlashBot is Ownable {
         returns (
             address lowerPool,
             address higherPool,
+            uint price0,
+            uint price1,
             OrderedReserves memory orderedReserves
         )
     {
         (uint256 pool0Reserve0, uint256 pool0Reserve1, ) = IUniswapV2Pair(pool0).getReserves();
         (uint256 pool1Reserve0, uint256 pool1Reserve1, ) = IUniswapV2Pair(pool1).getReserves();
 
-        // Calculate the price denominated in quote asset token
-        /*
-        (Decimal.D256 memory price0, Decimal.D256 memory price1) =
-            baseTokenSmaller
-                ? (Decimal.from(pool0Reserve0).div(pool0Reserve1), Decimal.from(pool1Reserve0).div(pool1Reserve1))
-                : (Decimal.from(pool0Reserve1).div(pool0Reserve0), Decimal.from(pool1Reserve1).div(pool1Reserve0));
-        */
-        (uint price0, uint price1) =
+        (price0, price1) =
             baseTokenSmaller
                 ? (pool0Reserve0/(pool0Reserve1), pool1Reserve0/(pool1Reserve1))
                 : (pool0Reserve1/(pool0Reserve0), pool1Reserve1/(pool1Reserve0));
@@ -184,22 +201,267 @@ contract FlashBot is Ownable {
         console2.log('Sell to pool:', higherPool);
     }
 
-    /// @notice Do an arbitrage between two Uniswap-like AMM pools
-    /// @dev Two pools must contains same token pair
-    function flashArbitrage(address pool0, address pool1) external {
-        ArbitrageInfo memory info;
-        (info.baseTokenSmaller, info.baseToken, info.quoteToken) = isbaseTokenSmaller(pool0, pool1);
+    function getOrderedReservesWithBPool(
+        address bpool,
+        address upool,
+        bool baseTokenSmaller
+    )
+        internal
+        view
+        returns (
+            address lowerPool,
+            address higherPool,
+            uint spotBPrice,
+            uint spotUPrice,
+            OrderedReserves memory orderedReserves
+        )
+    {
+        (uint uniReserve0, uint uniReserve1,) = IUniswapV2Pair(upool).getReserves();
+        console2.log("uniReserve0:", uniReserve0, ",uniReserve1", uniReserve1);
 
+        (address token0, address token1) = (IUniswapV2Pair(upool).token0(), IUniswapV2Pair(upool).token1());
+        (uint BReserve0, uint BReserve1) = (IBPool(bpool).getBalance(token0), IBPool(bpool).getBalance(token1));
+        
+        (spotBPrice, spotUPrice) =
+            baseTokenSmaller
+                ? (IBPool(bpool).getSpotPrice(token0, token1), calcSpotPrice(uniReserve0, 1e18, uniReserve1, 1e18, 3000000000000000))
+                : (IBPool(bpool).getSpotPrice(token1, token0), calcSpotPrice(uniReserve1, 1e18, uniReserve0, 1e18, 3000000000000000));
+
+        // get a1, b1, a2, b2 with following rule:
+        // 1. (a1, b1) represents the pool with lower price, denominated in quote asset token
+        // 2. (a1, a2) are the base tokens in two pools
+        if (spotUPrice > spotBPrice) {
+            (lowerPool, higherPool) = (bpool, upool);
+            (orderedReserves.a1, orderedReserves.b1, orderedReserves.a2, orderedReserves.b2) = baseTokenSmaller
+                ? (BReserve0, BReserve1, uniReserve0, uniReserve1)
+                : (BReserve1, BReserve0, uniReserve1, uniReserve0);
+        } else {
+            (lowerPool, higherPool) = (upool, bpool);
+            (orderedReserves.a1, orderedReserves.b1, orderedReserves.a2, orderedReserves.b2) = baseTokenSmaller
+                ? (uniReserve0, uniReserve1, BReserve0, BReserve1)
+                : (uniReserve1, uniReserve0, BReserve1, BReserve0);
+        }
+    }
+
+    function calcBaseTokenOutAmount(
+        OrderedReserves memory orderedReserves, 
+        DiffPoolInfo memory info, 
+        address targetBPool, 
+        address targetUniPool, 
+        uint borrowAmount
+    ) 
+        internal 
+        returns (
+            uint baseTokenOutAmount, 
+            uint debtAmount, 
+            uint profitAmount
+        ) 
+    {
+        (uint baseTokenWeight, uint quoteTokenWeight) = (IBPool(targetBPool).getNormalizedWeight(info.baseToken), IBPool(targetBPool).getNormalizedWeight(info.quoteToken));
+
+        if (info.spotUPrice > info.spotBPrice) {
+            // borrow quote token on lower price pool, calculate how much debt we need to pay demoninated in base token
+            debtAmount = IBPool(targetBPool).calcInGivenOut(
+                orderedReserves.a1, 
+                baseTokenWeight,
+                orderedReserves.b1, 
+                quoteTokenWeight,
+                borrowAmount,
+                IBPool(targetBPool).getSwapFee()
+            );
+            // sell borrowed quote token on higher price pool, calculate how much base token we can get
+            baseTokenOutAmount = getAmountOut(borrowAmount, orderedReserves.b2, orderedReserves.a2);
+            require(baseTokenOutAmount > debtAmount, 'Arbitrage fail, no profit (spotUPrice > spotBPrice)');
+            console2.log('Profit (spotUPrice > spotBPrice):', (baseTokenOutAmount - debtAmount));
+            profitAmount = baseTokenOutAmount - debtAmount;
+        } else {
+            // borrow quote token on lower price pool, calculate how much debt we need to pay demoninated in base token
+            debtAmount = getAmountIn(borrowAmount, orderedReserves.a1, orderedReserves.b1);
+            // sell borrowed quote token on higher price pool, calculate how much base token we can get
+            baseTokenOutAmount = IBPool(targetBPool).calcOutGivenIn(
+                orderedReserves.b2, 
+                quoteTokenWeight,
+                orderedReserves.a2, 
+                baseTokenWeight,
+                borrowAmount,
+                IBPool(targetBPool).getSwapFee()
+            );                
+            require(baseTokenOutAmount > debtAmount, 'Arbitrage fail, no profit (spotUPrice < spotBPrice)');
+            console2.log('Profit (spotUPrice < spotBPrice):', (baseTokenOutAmount - debtAmount));
+            profitAmount = baseTokenOutAmount - debtAmount;
+        }
+    }
+
+    function setCallbackData(
+        OrderedReserves memory orderedReserves, 
+        DiffPoolInfo memory info, 
+        uint debtAmount, 
+        uint baseTokenOutAmount, 
+        uint borrowAmount
+    ) 
+        internal 
+        returns (
+            bytes memory data
+        ) 
+    {
+        CallbackData memory callbackData;
+
+        callbackData.debtPool = info.lowerPool;
+        callbackData.targetPool = info.higherPool;
+        callbackData.debtTokenSmaller = info.baseTokenSmaller;
+        callbackData.borrowedToken = info.quoteToken;
+        callbackData.debtToken = info.baseToken;
+        callbackData.debtAmount = debtAmount;
+        callbackData.debtTokenOutAmount = baseTokenOutAmount;
+        callbackData.borrowAmount = borrowAmount;
+        callbackData.spotUPrice = info.spotUPrice;
+        callbackData.spotBPrice = info.spotBPrice;
+
+        data = abi.encode(callbackData);
+    }
+
+    function excuteArbitrageWithinUniPoolBPool(
+        address targetBPool, 
+        address targetUniPool
+    ) 
+        external 
+        returns (
+            bool success
+        ) 
+    {
+        // Check if base token smaller than quote token
+        DiffPoolInfo memory info;
+        (info.baseTokenSmaller, info.baseToken, info.quoteToken) = isbaseTokenSmallerWithBPool(targetUniPool);
+
+        // Get two pools reserves in order
         OrderedReserves memory orderedReserves;
-        (info.lowerPool, info.higherPool, orderedReserves) = getOrderedReserves(pool0, pool1, info.baseTokenSmaller);
+        (info.lowerPool, info.higherPool, info.spotBPrice, info.spotUPrice, orderedReserves) = 
+            getOrderedReservesWithBPool(targetBPool, targetUniPool, info.baseTokenSmaller);
 
-        // this must be updated every transaction for callback origin authentication
-        permissionedPairAddress = info.lowerPool;
+        // Calculate optimal amount to borrow
+        uint borrowAmount = calcBorrowAmount(orderedReserves);
+       
+        // Calculate two pools' amountIn and amountOut according to borrowAmount
+        (uint baseTokenOutAmount, uint debtAmount, uint profitAmount) = calcBaseTokenOutAmount(orderedReserves, info, targetBPool, targetUniPool, borrowAmount);
+
+        // Set flashloan callbackData
+        bytes memory callbackData = setCallbackData(orderedReserves, info, debtAmount, baseTokenOutAmount, borrowAmount);
+        
+        // Excute balancer's flashloan
+        uint balanceBefore = IERC20(info.baseToken).balanceOf(address(this));
+        uint[] memory amounts = new uint[](1);
+        amounts[0] = debtAmount;
+        IERC20[] memory tokens = new IERC20[](1);
+        tokens[0] = IERC20(info.baseToken);
+        makeFlashLoan(tokens, amounts, callbackData);
+
+        // Check final balance
+        uint256 balanceAfter = IERC20(info.baseToken).balanceOf(address(this));
+        require(balanceAfter > balanceBefore, 'Losing money');
+        success = true;
+
+        console2.log('Borrow from pool:', info.lowerPool);
+        console2.log('Sell to pool:', info.higherPool);
+        console2.log('spotUPrice:', info.spotUPrice);
+        console2.log('spotBPrice:', info.spotBPrice);
+        console2.log('profit:', profitAmount);
+        console2.log('borrowAmount(quoteToken):', borrowAmount);
+    }
+
+    function makeFlashLoan(
+        IERC20[] memory tokens,
+        uint256[] memory amounts,
+        bytes memory userData
+    ) internal {
+      vault.flashLoan(this, tokens, amounts, userData);
+    }
+
+    function receiveFlashLoan(
+        IERC20[] memory tokens,
+        uint256[] memory amounts,
+        uint256[] memory feeAmounts,
+        bytes memory userData
+    ) external override {
+        require(msg.sender == VAULT_ADDRESS);
+        
+        CallbackData memory info = abi.decode(userData, (CallbackData));
+
+        if (info.spotUPrice > info.spotBPrice) {
+            // First swap in BPool (lowPool)
+            IERC20(info.debtToken).approve(info.debtPool, type(uint).max);
+            (uint tokenAmountOut,) = IBPool(info.debtPool).swapExactAmountIn(info.debtToken, info.debtAmount, info.borrowedToken, 0, type(uint).max);
+            
+            // Second swap in UniPool (higherPool)
+            IERC20(info.borrowedToken).approve(info.targetPool, type(uint).max);
+            (uint256 amount0Out, uint256 amount1Out) =
+                info.debtTokenSmaller ? (info.debtTokenOutAmount, uint256(0)) : (uint256(0), info.debtTokenOutAmount);
+            IERC20(info.borrowedToken).transfer(info.targetPool, info.borrowAmount);
+            IUniswapV2Pair(info.targetPool).swap(amount0Out, amount1Out, address(this), "");
+            
+            // Repay to vault
+            IERC20(info.debtToken).transfer(VAULT_ADDRESS, info.debtAmount);
+        } else {
+            // First swap in UniPool (lowPool)
+            IERC20(info.debtToken).approve(info.debtPool, type(uint).max);
+            (uint256 amount0Out, uint256 amount1Out) =
+                info.debtTokenSmaller ? (uint256(0), info.borrowAmount) : (info.borrowAmount, uint256(0));
+            IERC20(info.debtToken).transfer(info.debtPool, info.debtAmount);
+            IUniswapV2Pair(info.debtPool).swap(amount0Out, amount1Out, address(this), "");
+            
+            // Second swap in BPool (higherPool)
+            IERC20(info.borrowedToken).approve(info.targetPool, type(uint).max);
+            (uint tokenAmountOut,) = IBPool(info.targetPool).swapExactAmountIn(info.borrowedToken, info.borrowAmount, info.debtToken, 0, type(uint).max);
+            
+            // Repay to vault
+            IERC20(info.debtToken).transfer(VAULT_ADDRESS, info.debtAmount);
+        }
+    }
+
+    function uniswapV2Call(
+        address sender,
+        uint256 amount0,
+        uint256 amount1,
+        bytes memory data
+    ) public {
+        CallbackData memory info = abi.decode(data, (CallbackData));
+
+        // access control
+        require(msg.sender == info.debtPool, 'Not from debtPool address call');
+        require(sender == address(this), 'Not from this contract');
+
+        // Swap quote token in unipool with higher price 
+        uint256 borrowedAmount = amount0 > 0 ? amount0 : amount1;
+        IERC20(info.borrowedToken).transfer(info.targetPool, borrowedAmount);
+        (uint256 amount0Out, uint256 amount1Out) =
+            info.debtTokenSmaller ? (info.debtTokenOutAmount, uint256(0)) : (uint256(0), info.debtTokenOutAmount);
+        IUniswapV2Pair(info.targetPool).swap(amount0Out, amount1Out, address(this), new bytes(0));
+
+        // Pay back to flashswap
+        IERC20(info.debtToken).transfer(info.debtPool, info.debtAmount);
+    }
+
+    function excuteArbitrageWithinUniPools(
+        address pool0, 
+        address pool1
+    ) 
+        external 
+        returns (
+            bool success
+        )
+    {
+        // Check if base token smaller than quote token
+        SamePoolInfo memory info;
+        (info.baseTokenSmaller, info.baseToken, info.quoteToken) = isbaseTokenSmaller(pool0, pool1);
+        
+        // Get two pools reserves in order
+        OrderedReserves memory orderedReserves;
+        (info.lowerPool, info.higherPool, info.price0, info.price1, orderedReserves) = getOrderedReserves(pool0, pool1, info.baseTokenSmaller);
 
         uint256 balanceBefore = IERC20(info.baseToken).balanceOf(address(this));
 
         // avoid stack too deep error
         {
+            // Calculate optimal amount to borrow
             uint256 borrowAmount = calcBorrowAmount(orderedReserves);
             (uint256 amount0Out, uint256 amount1Out) =
                 info.baseTokenSmaller ? (uint256(0), borrowAmount) : (borrowAmount, uint256(0));
@@ -207,8 +469,8 @@ contract FlashBot is Ownable {
             uint256 debtAmount = getAmountIn(borrowAmount, orderedReserves.a1, orderedReserves.b1);
             // sell borrowed quote token on higher price pool, calculate how much base token we can get
             uint256 baseTokenOutAmount = getAmountOut(borrowAmount, orderedReserves.b2, orderedReserves.a2);
-            require(baseTokenOutAmount > debtAmount, 'Arbitrage fail, no profit');
-            console2.log('Profit:', (baseTokenOutAmount - debtAmount) / 1 ether);
+            require(baseTokenOutAmount > debtAmount, 'Arbitrage fail, no profit (within two UniPools)');
+            console2.log('Profit (within two UniPools):', (baseTokenOutAmount - debtAmount));
 
             // can only initialize this way to avoid stack too deep error
             CallbackData memory callbackData;
@@ -226,41 +488,18 @@ contract FlashBot is Ownable {
 
         uint256 balanceAfter = IERC20(info.baseToken).balanceOf(address(this));
         require(balanceAfter > balanceBefore, 'Losing money');
+        success = true;
 
-        if (info.baseToken == WETH) {
-            IWETH(info.baseToken).withdraw(balanceAfter);
-        }
-        permissionedPairAddress = address(1);
+        console2.log('Borrow from pool:', info.lowerPool);
+        console2.log('Sell to pool:', info.higherPool);
+        console2.log('profit:', balanceAfter - balanceBefore);
     }
-
-    function uniswapV2Call(
-        address sender,
-        uint256 amount0,
-        uint256 amount1,
-        bytes memory data
-    ) public {
-        // access control
-        require(msg.sender == permissionedPairAddress, 'Non permissioned address call');
-        require(sender == address(this), 'Not from this contract');
-
-        uint256 borrowedAmount = amount0 > 0 ? amount0 : amount1;
-        CallbackData memory info = abi.decode(data, (CallbackData));
-
-        IERC20(info.borrowedToken).safeTransfer(info.targetPool, borrowedAmount);
-
-        (uint256 amount0Out, uint256 amount1Out) =
-            info.debtTokenSmaller ? (info.debtTokenOutAmount, uint256(0)) : (uint256(0), info.debtTokenOutAmount);
-        IUniswapV2Pair(info.targetPool).swap(amount0Out, amount1Out, address(this), new bytes(0));
-
-        IERC20(info.debtToken).safeTransfer(info.debtPool, info.debtAmount);
-    }
-
-    /// @notice Calculate how much profit we can by arbitraging between two pools
+    
     function getProfit(address pool0, address pool1) external view returns (uint256 profit, address baseToken) {
         (bool baseTokenSmaller, , ) = isbaseTokenSmaller(pool0, pool1);
         baseToken = baseTokenSmaller ? IUniswapV2Pair(pool0).token0() : IUniswapV2Pair(pool0).token1();
 
-        (, , OrderedReserves memory orderedReserves) = getOrderedReserves(pool0, pool1, baseTokenSmaller);
+        (, , , , OrderedReserves memory orderedReserves) = getOrderedReserves(pool0, pool1, baseTokenSmaller);
 
         uint256 borrowAmount = calcBorrowAmount(orderedReserves);
         // borrow quote token on lower price pool,
@@ -274,7 +513,6 @@ contract FlashBot is Ownable {
         }
     }
 
-    /// @dev calculate the maximum base asset amount to borrow in order to get maximum profit during arbitrage
     function calcBorrowAmount(OrderedReserves memory reserves) internal pure returns (uint256 amount) {
         // we can't use a1,b1,a2,b2 directly, because it will result overflow/underflow on the intermediate result
         // so we:
@@ -326,13 +564,14 @@ contract FlashBot is Ownable {
         require((x1 > 0 && x1 < b1 && x1 < b2) || (x2 > 0 && x2 < b1 && x2 < b2), 'Wrong input order');
         amount = (x1 > 0 && x1 < b1 && x1 < b2) ? uint256(x1) * d : uint256(x2) * d;
     }
-
-    /// @dev find solution of quadratic equation: ax^2 + bx + c = 0, only return the positive solution
+    
+    // copy from amm-arbitrageur
     function calcSolutionForQuadratic(
         int256 a,
         int256 b,
         int256 c
     ) internal pure returns (int256 x1, int256 x2) {
+        // find solution of quadratic equation: ax^2 + bx + c = 0, only return the positive solution
         int256 m = b**2 - 4 * a * c;
         // m < 0 leads to complex number
         require(m > 0, 'Complex number');
@@ -342,10 +581,11 @@ contract FlashBot is Ownable {
         x2 = (-b - sqrtM) / (2 * a);
     }
 
-    /// @dev Newton’s method for caculating square root of n
+    // copy from amm-arbitrageur
     function sqrt(uint256 n) internal pure returns (uint256 res) {
         assert(n > 1);
 
+        // Newton’s method for caculating square root of n
         // The scale factor is a crude way to turn everything into integer calcs.
         // Actually do (n * 10 ^ 4) ^ (1/2)
         uint256 _n = n * 10**6;
@@ -365,7 +605,6 @@ contract FlashBot is Ownable {
     }
 
     // copy from UniswapV2Library
-    // given an output amount of an asset and pair reserves, returns a required input amount of the other asset
     function getAmountIn(
         uint256 amountOut,
         uint256 reserveIn,
@@ -379,7 +618,6 @@ contract FlashBot is Ownable {
     }
 
     // copy from UniswapV2Library
-    // given an input amount of an asset and pair reserves, returns the maximum output amount of the other asset
     function getAmountOut(
         uint256 amountIn,
         uint256 reserveIn,
@@ -391,5 +629,72 @@ contract FlashBot is Ownable {
         uint256 numerator = amountInWithFee * (reserveOut);
         uint256 denominator = (reserveIn * (1000)) + (amountInWithFee);
         amountOut = numerator / denominator;
+    }
+
+    // copy from BNum
+    function bdiv(uint a, uint b)
+        internal pure
+        returns (uint)
+    {
+        require(b != 0, "ERR_DIV_ZERO");
+        uint c0 = a * BONE;
+        require(a == 0 || c0 / a == BONE, "ERR_DIV_INTERNAL"); // bmul overflow
+        uint c1 = c0 + (b / 2);
+        require(c1 >= c0, "ERR_DIV_INTERNAL"); //  badd require
+        uint c2 = c1 / b;
+        return c2;
+    }
+
+    // copy from BNum
+    function bmul(uint a, uint b)
+        internal pure
+        returns (uint)
+    {
+        uint c0 = a * b;
+        require(a == 0 || c0 / a == b, "ERR_MUL_OVERFLOW");
+        uint c1 = c0 + (BONE / 2);
+        require(c1 >= c0, "ERR_MUL_OVERFLOW");
+        uint c2 = c1 / BONE;
+        return c2;
+    }
+    
+    // copy from BNum
+    function bsub(uint a, uint b)
+        internal pure
+        returns (uint)
+    {
+        (uint c, bool flag) = bsubSign(a, b);
+        require(!flag, "ERR_SUB_UNDERFLOW");
+        return c;
+    }
+
+    // copy from BNum
+    function bsubSign(uint a, uint b)
+        internal pure
+        returns (uint, bool)
+    {
+        if (a >= b) {
+            return (a - b, false);
+        } else {
+            return (b - a, true);
+        }
+    }
+
+    // copy from BMath
+    function calcSpotPrice(
+        uint tokenBalanceIn,
+        uint tokenWeightIn,
+        uint tokenBalanceOut,
+        uint tokenWeightOut,
+        uint swapFee
+    )
+        internal pure
+        returns (uint spotPrice)
+    {
+        uint numer = bdiv(tokenBalanceIn, tokenWeightIn);
+        uint denom = bdiv(tokenBalanceOut, tokenWeightOut);
+        uint ratio = bdiv(numer, denom);
+        uint scale = bdiv(BONE, bsub(BONE, swapFee));
+        return  (spotPrice = bmul(ratio, scale));
     }
 }

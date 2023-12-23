@@ -1,5 +1,9 @@
+@balancer-labs/=lib/balancer-v2-monorepo/../../node_modules/@balancer-labs/
 @openzeppelin/contracts/=lib/openzeppelin-contracts/contracts/
+balancer-core/=lib/balancer-core/
+balancer-v2-monorepo/=lib/balancer-v2-monorepo/
 ds-test/=lib/forge-std/lib/ds-test/src/
 erc4626-tests/=lib/openzeppelin-contracts/lib/erc4626-tests/
 forge-std/=lib/forge-std/src/
+library/=lib/library/
 openzeppelin-contracts/=lib/openzeppelin-contracts/
