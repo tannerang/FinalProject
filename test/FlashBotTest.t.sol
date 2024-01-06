@@ -18,7 +18,6 @@ contract FlashBotTest is Test {
     address user2 = makeAddr("user2");
     address constant WETH_ADDRESS = 0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2;
     address constant USDC_ADDRESS = 0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48;
-    address constant AAVE_ADDRESS = 0x7Fc66500c84A76Ad7e9c93437bFc5Ac33E2DDaE9;
     address constant REQ_ADDRESS = 0x8f8221aFbB33998d8584A2B05749bA73c37a938a;
     address constant BAL_ADDRESS = 0xba100000625a3754423978a60c9317c58a424e3D;
     address uniswapFactory = 0x5C69bEe701ef814a2B6a3EDD4B1652CB9cc5aA6f;
@@ -27,14 +26,15 @@ contract FlashBotTest is Test {
     address targetUniPool = 0xA70d458A4d9Bc0e6571565faee18a48dA5c0D593; // BAL / WETH
     address targetSushiPool = 0x9BffA3ce3E56d0d26447a45771FEc76bD4173022; // BAL / WETH
 
-    //address targetBPool = 0x69d460e01070A7BA1bc363885bC8F4F0daa19Bf5; // REQ / WETH
-    //address targetUniPool = 0x4a7d4BE868e0b811ea804fAF0D3A325c3A29a9ad; // REQ / WETH
-
     IERC20 public weth;
-    IERC20 public aave;
     IERC20 public req;
     IERC20 public bal;
     FlashBot public flashBot;
+
+    event WithdrawnETH(address indexed to, uint256 indexed value);
+    event WithdrawnERC20(address indexed token, address indexed to, uint256 indexed value);
+    event BaseTokenAdded(address indexed token);
+    event BaseTokenRemoved(address indexed token);
 
     function setUp() public {
 
@@ -44,14 +44,88 @@ contract FlashBotTest is Test {
         vm.startPrank(admin);
         flashBot = new FlashBot(WETH_ADDRESS);
         weth = IERC20(WETH_ADDRESS);
-        aave = IERC20(AAVE_ADDRESS);
         req = IERC20(REQ_ADDRESS);
         bal = IERC20(BAL_ADDRESS);
 
         deal(WETH_ADDRESS, user1, 100000 * 10 ** IERC20(weth).decimals());
-        deal(AAVE_ADDRESS, user1, 100000 * 10 ** IERC20(aave).decimals());
         deal(REQ_ADDRESS, user1, 1000000000 * 10 ** IERC20(req).decimals());
         deal(BAL_ADDRESS, user1, 1000000000 * 10 ** IERC20(bal).decimals());
+    }
+
+    function testAddBaseToken() public {
+        vm.startPrank(admin);
+        vm.expectEmit();
+        emit BaseTokenAdded(USDC_ADDRESS);
+
+        // Perform the call
+        flashBot.addBaseToken(USDC_ADDRESS);
+        assertEq(flashBot.baseTokensContains(USDC_ADDRESS), true);
+    }
+
+    function testRemoveBaseToken() public {
+        vm.startPrank(admin);
+        vm.expectEmit();
+        emit BaseTokenRemoved(USDC_ADDRESS);
+
+        // Perform the call
+        flashBot.removeBaseToken(USDC_ADDRESS);
+        assertEq(flashBot.baseTokensContains(USDC_ADDRESS), false);
+    }
+
+    function testWithdrawETH() public {
+        vm.startPrank(admin);
+
+        // Test when ETH is 0
+        vm.expectRevert("ETH balance is zero");
+        flashBot.withdrawETH();
+        assertEq(admin.balance, 0);
+
+        // Test when ETH is 100
+        uint balance = 100 ether;
+        vm.deal(address(flashBot), balance);
+        vm.expectEmit();
+        emit WithdrawnETH(admin, balance);
+        flashBot.withdrawETH();
+        assertEq(admin.balance, balance);
+    }
+
+    function testWithdrawERC20() public {
+        vm.startPrank(admin);
+
+        // Test when WETH is 0
+        vm.expectRevert("ERC20 balance is zero");
+        flashBot.withdrawERC20(WETH_ADDRESS);
+
+        // Test when WETH is 100
+        uint balance = 100 ether;
+        deal(WETH_ADDRESS, address(flashBot), balance);
+        vm.expectEmit();
+        emit WithdrawnERC20(WETH_ADDRESS, admin, balance);
+        flashBot.withdrawERC20(WETH_ADDRESS);
+        assertEq(weth.balanceOf(admin), balance);
+    }
+
+    function testGetBaseTokens() public {
+        address[] memory tokens = flashBot.getBaseTokens();
+        assertEq(tokens[0], WETH_ADDRESS);
+    }
+
+    function testBaseTokensContains() public {
+        bool isContains = flashBot.baseTokensContains(WETH_ADDRESS);
+        assertEq(isContains, true);
+    }
+
+    function testIsbaseTokenSmaller() public {
+        vm.expectRevert("Same pair address");
+        address(flashBot).call(abi.encodeWithSignature("isbaseTokenSmaller(address,address)", targetUniPool, targetUniPool));
+        
+        vm.expectRevert("Require same token pair");
+        address(flashBot).call(abi.encodeWithSignature("isbaseTokenSmaller(address,address)", targetUniPool, 0x4a7d4BE868e0b811ea804fAF0D3A325c3A29a9ad));
+
+        address wrongUniPool = 0x517F9dD285e75b599234F7221227339478d0FcC8; // MKR / DAI in Uni
+        address wrongSushiPool = 0x5E8f882dD0d062e2d81bcBe4EC61d7AEaBf80c74; // MKR / DAI in Sushi
+        vm.expectRevert("No base token in pair");
+        address(flashBot).call(abi.encodeWithSignature("isbaseTokenSmaller(address,address)", wrongUniPool, wrongSushiPool));
     }
 
     function testGetPool() public {
@@ -67,27 +141,27 @@ contract FlashBotTest is Test {
 
     function testGetProfit() public {
 
-        address pool0 = IUniswapV2Factory(uniswapFactory).getPair(WETH_ADDRESS, AAVE_ADDRESS);
-        address pool1 = IUniswapV2Factory(sushiswapFactory).getPair(WETH_ADDRESS, AAVE_ADDRESS);
+        address pool0 = IUniswapV2Factory(uniswapFactory).getPair(WETH_ADDRESS, REQ_ADDRESS);
+        address pool1 = IUniswapV2Factory(sushiswapFactory).getPair(WETH_ADDRESS, REQ_ADDRESS);
         uint WETHAmountOut = 1 * 10 ** IERC20(weth).decimals();
-        console2.log("AAVE Bal before:", aave.balanceOf(user1));
+        console2.log("REQ Bal before:", req.balanceOf(user1));
         console2.log("WETH Bal before:", weth.balanceOf(user1));
 
-        // Mock a large amount of swap in AAVE/WETH pair
+        // Mock a large amount of swap in REQ/WETH pair
         vm.startPrank(user1);
-        aave.approve(pool0, type(uint).max);
+        req.approve(pool0, type(uint).max);
         weth.approve(pool0, type(uint).max);
         (uint reserve0, uint reserve1,) = IUniswapV2Pair(pool0).getReserves();
         console2.log("reserve0:", reserve0, ",reserve1", reserve1);
         console2.log("token0:", IUniswapV2Pair(pool0).token0(), ",token1:",  IUniswapV2Pair(pool0).token1());
 
-        uint amountIn = getAmountIn(WETHAmountOut, reserve0, reserve1); //In: AAVE, Out: WETH
-        aave.transfer(pool0, amountIn);
-        IUniswapV2Pair(pool0).swap(0, WETHAmountOut, user1, ""); // token0: AAVE, token1: WETH
+        uint amountIn = getAmountIn(WETHAmountOut, reserve0, reserve1); //In: REQ, Out: WETH
+        req.transfer(pool0, amountIn);
+        IUniswapV2Pair(pool0).swap(0, WETHAmountOut, user1, ""); // token0: REQ, token1: WETH
         vm.stopPrank();
 
         console2.log("Swap done");
-        console2.log("AAVE Bal after:", aave.balanceOf(user1));
+        console2.log("REQ Bal after:", req.balanceOf(user1));
         console2.log("WETH Bal after:", weth.balanceOf(user1));
 
         // Excute getProfit function (only for two unipools)

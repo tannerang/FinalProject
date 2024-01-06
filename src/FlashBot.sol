@@ -66,7 +66,8 @@ contract FlashBot is IFlashLoanRecipient, Ownable {
     // INIT BASE TOKEN
     address public WETH;
 
-    event Withdrawn(address indexed to, uint256 indexed value);
+    event WithdrawnETH(address indexed to, uint256 indexed value);
+    event WithdrawnERC20(address indexed token, address indexed to, uint256 indexed value);
     event BaseTokenAdded(address indexed token);
     event BaseTokenRemoved(address indexed token);
 
@@ -77,21 +78,18 @@ contract FlashBot is IFlashLoanRecipient, Ownable {
 
     receive() external payable {}
 
-    function withdraw() external onlyOwner {
+    function withdrawETH() external onlyOwner {
         uint256 balance = address(this).balance;
-        if (balance > 0) {
-            payable(owner()).transfer(balance);
-            emit Withdrawn(owner(), balance);
-        }
+        require(balance > 0, "ETH balance is zero");
+        payable(owner()).transfer(balance);
+        emit WithdrawnETH(owner(), balance);
+    }
 
-        for (uint256 i = 0; i < baseTokens.length(); i++) {
-            address token = baseTokens.at(i);
-            balance = IERC20(token).balanceOf(address(this));
-            if (balance > 0) {
-                // do not use safe transfer here to prevents revert by any shitty token
-                IERC20(token).transfer(owner(), balance);
-            }
-        }
+    function withdrawERC20(address token) external onlyOwner {
+        uint256 balance = IERC20(token).balanceOf(address(this));
+        require(balance > 0, "ERC20 balance is zero");
+        IERC20(token).transfer(owner(), balance);
+        emit WithdrawnERC20(token, owner(), balance);
     }
 
     function addBaseToken(address token) external onlyOwner {
