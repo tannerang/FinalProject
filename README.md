@@ -14,6 +14,9 @@
 - 在 receiveFlashLoan 中向 lowerPrice Pool 買入 amountIn 數量的 Base Token， 接著向 Pair1 中賣出 amountOut 數量的 Base Token，最後 repayFlashloan amountIn 數量的 Base Token
 - (amountOut - amountIn) 的 Base Token 即為本次交易淨利
 
+<img width="943" alt="image" src="https://github.com/tannerang/FinalProject/assets/57789692/ccbfe916-1419-4c66-ba98-e16105cc95c5">
+
+
 ## 執行說明
 ```
 $ git clone https://github.com/tannerang/FinalProject.git
