@@ -38,6 +38,12 @@ $ forge test
 | src/FlashBot.sol | 88.16% (216/245) | 90.45% (284/314) | 48.94% (46/94) | 100.00% (28/28) |
 | Total            | 88.16% (216/245) | 90.45% (284/314) | 48.94% (46/94) | 100.00% (28/28) |
 
+## 注意事項
+- 目前僅包含 UniSwapV2、Balancer 兩種 AMM
+- 目前僅適用 `Decimal = 1e18` 的代幣
+- Balancer AMM 適用的池子僅限於代幣權重 皆為 50%
+- Base Token 預設為 WETH
+
 ## 數學計算
 
 已知 `Pair0 = Lower Price Pool`、`Pair1 = Higher Price Pool`，假設 Pair0 與 Pair1 的初始狀態如下：
