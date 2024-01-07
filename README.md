@@ -137,13 +137,22 @@ WEBSOCKET_URL=wss://mainnet.infura.io/ws/v3/<YOUR_API_KEY>
 
 ![image](https://github.com/tannerang/FinalProject/assets/57789692/d4211137-f813-4cba-885f-a7691b86cf96)
 
-為避免指數運算過於複雜，我們令：
+為了避免指數在求導函數時過於複雜，我們令：
 
 ![image](https://github.com/tannerang/FinalProject/assets/57789692/323c71ab-30f6-4fb0-a850-6ecf138065f8)
 
 ![image](https://github.com/tannerang/FinalProject/assets/57789692/d01ca255-b97c-4cdc-a6ac-07ce9778c13a)
 
+再令：
+
+![image](https://github.com/tannerang/FinalProject/assets/57789692/c12f6056-5d89-4a46-ad87-04895b64f697)
+
+![image](https://github.com/tannerang/FinalProject/assets/57789692/84b10ef2-c5f9-431c-a276-5005703352c1)
+
 
 同樣地，欲求出利潤最大時的 x 值，對上面的函數求導函數，得下：
+
+![image](https://github.com/tannerang/FinalProject/assets/57789692/04f48c22-b9b7-470a-80ac-2d8a6a403676)
+
 
 
