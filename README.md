@@ -30,6 +30,11 @@ $ cd FinalProject
 $ forge install
 $ forge test
 ```
+```
+// in .env file
+MAINNET_RPC_URL=https://eth-mainnet.g.alchemy.com/v2/<YOUR_RPC_URL>
+WEBSOCKET_URL=wss://mainnet.infura.io/ws/v3/<YOUR_API_KEY>
+```
 
 ## 測試報告
 
@@ -44,7 +49,7 @@ $ forge test
 - Balancer AMM 適用的池子僅限於代幣權重皆為 50%
 - Base Token 預設為 WETH
 
-## 數學計算
+## 數學推導
 
 已知 `Pair0 = Lower Price Pool`、`Pair1 = Higher Price Pool`，假設 Pair0 與 Pair1 的初始狀態如下：
 
@@ -96,7 +101,7 @@ $ forge test
 
 最後求出滿足條件的 x 值，即為能使利潤最大化的 Quote Token 數量
 
---------------------------------------------------------------
+## 進階計算
 
 然而，上述推論僅適用於符合 `x * y = k` 公式的 AMM，也就是交易對僅包含兩種代幣且權重各為 50% 的 AMM
 無法適用像 Balancer 這種可以自定義交易對代幣數量和代幣權重的 AMM，這種 AMM 在利潤最大化之下的 Quote Token 最佳數量計算也隨之複雜
