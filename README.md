@@ -41,7 +41,7 @@ $ forge test
 ## 注意事項
 - 目前僅包含 UniSwapV2、Balancer 兩種 AMM
 - 目前僅適用 `Decimal = 1e18` 的代幣
-- Balancer AMM 適用的池子僅限於代幣權重 皆為 50%
+- Balancer AMM 適用的池子僅限於代幣權重皆為 50%
 - Base Token 預設為 WETH
 
 ## 數學計算
@@ -115,11 +115,30 @@ $ forge test
 
 <img width="257" alt="image" src="https://github.com/tannerang/FinalProject/assets/57789692/7400c51f-14e1-409e-b722-9a9051cb3297">
 
-若我們想在符合 `x * y = k` 公式的 AMM 和 Balancer AMM 之間進行套利，假設 `PairB = Lower Price Pool` 和 `PairU = Higher Price Pool`，則初始狀態如下：(在此不討論 `PairB = Higher Price Pool` 和 `PairU = Lower Price Pool` 的情況)
+若我們想在符合 `x * y = k` 公式的 AMM 和 Balancer AMM 之間進行套利，假設 `PairB = Lower Price Pool` 和 `PairU = Higher Price Pool`，則初始狀態如下：(在此先不討論 `PairB = Higher Price Pool` 和 `PairU = Lower Price Pool` 的情況)
 
 |                     | PairB | PairU |
 | :-------------------| :---- | :---- |
 | Base Token Reserve  | a1    |   a2  |
 | Quote Token Reserve | b1    |   b2  |
+
+因我們在低價池買入的 Quote Token 數量和在高價池賣出的 Quote Token 數量相同，故令 `Quote Token Amount = x`，則 x 與利潤的函數為：
+
+![image](https://github.com/tannerang/FinalProject/assets/57789692/02b5ba2d-0d9e-4d9f-89b5-fac9008399ef)
+
+其中：
+
+![image](https://github.com/tannerang/FinalProject/assets/57789692/de0dcc87-b01c-4159-afdc-3d5a904efcf7)
+
+![image](https://github.com/tannerang/FinalProject/assets/57789692/d4211137-f813-4cba-885f-a7691b86cf96)
+
+為避免指數運算過於複雜，我們令：
+
+![image](https://github.com/tannerang/FinalProject/assets/57789692/323c71ab-30f6-4fb0-a850-6ecf138065f8)
+
+![image](https://github.com/tannerang/FinalProject/assets/57789692/d01ca255-b97c-4cdc-a6ac-07ce9778c13a)
+
+
+同樣地，欲求出利潤最大時的 x 值，對上面的函數求導函數，得下：
 
 
