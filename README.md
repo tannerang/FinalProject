@@ -2,6 +2,10 @@
 - 合約支援 UniswapV2 之間與 Balancer BPool 和 UniswapV2 之間的 AMM 套利。
 - 鑑於目前 Balancer flashloan 處於 0% 交易手續費狀態，以及 Balancer BPool (0.001% - 10%) 容易擁有相較 UniswapV2 Pool (0.3%) 更低的交易手續費，故選擇支援 Balancer AMM，可選擇的池子可參考此[連結](<https://pools.balancer.exchange/#/explore>)
 
+## 合約架構
+
+<img width="718" alt="image" src="https://github.com/tannerang/FinalProject/assets/57789692/3a8dbbbd-4a0f-4185-aeed-3010c3da989e">
+
 
 ## 流程說明
 套利使用 Balancer 的 Flashloan 功能，套利流程為：
