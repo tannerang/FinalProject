@@ -90,6 +90,12 @@ $ forge test
 
 最後求出滿足條件的 x 值，即為能使利潤最大化的 Quote Token 數量
 
+--------------------------------------------------------------
+
+然而，上述推論僅適用於符合 `x * y = k` 公式的 AMM，也就是交易對僅包含兩種代幣且權重各為 50% 的 AMM
+無法適用像 Balancer 這種可以自定義交易對代幣數量和代幣權重的 AMM，這種 AMM 在利潤最大化之下的 Quote Token 最佳數量計算也隨之複雜
+
+根據 [Balancer 白皮書](<https://balancer.fi/whitepaper.pdf>)，已知以下公式：
 
 **Balancer: Spot Price Calc**
 
@@ -102,4 +108,12 @@ $ forge test
 **Balancer: In-Given-Out**
 
 <img width="257" alt="image" src="https://github.com/tannerang/FinalProject/assets/57789692/7400c51f-14e1-409e-b722-9a9051cb3297">
+
+若我們想在符合 `x * y = k` 公式的 AMM 和 Balancer AMM 之間進行套利，假設 `PairB = Lower Price Pool` 和 `PairU = Higher Price Pool`，則初始狀態如下：(在此不討論 `PairB = Higher Price Pool` 和 `PairU = Lower Price Pool` 的情況)
+
+|                     | PairB | PairU |
+| :-------------------| :---- | :---- |
+| Base Token Reserve  | a1    |   a2  |
+| Quote Token Reserve | b1    |   b2  |
+
 
