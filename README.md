@@ -40,10 +40,56 @@ $ forge test
 
 ## 數學計算
 
-|                 | Pair0 | Pair1 |
-| :---------------| :---- | :---- |
-| Base Token 餘額  | a1    |   a2  |
-| Quote Token 餘額 | b1    |   b2  |
+已知 `Pair0 = Lower Price Pool`、`Pair1 = Higher Price Pool`，假設 Pair0 與 Pair1 的初始狀態如下：
+
+|                     | Pair0 | Pair1 |
+| :-------------------| :---- | :---- |
+| Base Token Reserve  | a1    |   a2  |
+| Quote Token Reserve | b1    |   b2  |
+
+
+我們預計在較便宜的 Pair0 中買入 `Delta b1` 數量的 Quote Token，基於 `x * y = k` 的公式，可得：
+
+![image](https://github.com/tannerang/FinalProject/assets/57789692/eb44137d-a9d4-44c7-94f0-ca0bfad6a266)
+
+接著在較高價的 Pair1 中賣出 `Delta b2` 數量的 Quote Token，可得：
+
+![image](https://github.com/tannerang/FinalProject/assets/57789692/f6ab43cf-5474-4166-a665-1e59cdd353cb)
+
+整理上方兩式得：
+
+![image](https://github.com/tannerang/FinalProject/assets/57789692/8154fdee-0303-4663-a32b-9f86f44ade88)
+
+因我們在低價池買入的 Quote Token 數量和在高價池賣出的 Quote Token 數量相同，故 `Delta b1 = Delta b2 (= Delta b)`
+
+我們令 `x = Delta b`，那麼 x 與利潤 (`Delta a2 - Delta a1`) 的函數為：
+
+![image](https://github.com/tannerang/FinalProject/assets/57789692/13052514-14be-4fb7-b6db-49e606556d7b)
+
+欲求出利潤最大時的 x 值，可以對上面的函數求導函數：
+
+![image](https://github.com/tannerang/FinalProject/assets/57789692/bce0160f-fc86-41cf-969c-ab47998a1019)
+
+當導函數為 0 時，存在極大/極小值，再透過一些條件設定忽略極小值時的解。令導函數等於 0 得：
+
+![image](https://github.com/tannerang/FinalProject/assets/57789692/cdddad12-01d7-4880-837a-1a377c34cdf3)
+
+![image](https://github.com/tannerang/FinalProject/assets/57789692/e538ad3e-727f-46d2-ba30-6da2fa4f2676)
+
+我們假設：
+
+![image](https://github.com/tannerang/FinalProject/assets/57789692/f11276d8-a67a-426b-8ed6-d40ab7a8a68e)
+
+將前述的方程式轉換成一般的一元二次方程式：
+
+![image](https://github.com/tannerang/FinalProject/assets/57789692/a0c07f4c-be6f-40c7-baf5-d6c3173a2c96)
+
+得解：
+
+![image](https://github.com/tannerang/FinalProject/assets/57789692/08b2861e-efe4-4df1-bc56-6a84d1f555ed)
+
+最後求出滿足條件的 x 值，即為能使利潤最大化的 Quote Token 數量
+
 
 **Balancer: Spot Price Calc**
 
