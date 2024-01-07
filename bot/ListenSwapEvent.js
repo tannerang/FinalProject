@@ -164,9 +164,8 @@ const logRefundETH = (params) => {
 }
 
 
-
 main()
 
 /*
-    node scripts/03_listenMempool.js
+    node bot/ListenSwapEvent.js
 */
