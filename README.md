@@ -137,7 +137,7 @@ WEBSOCKET_URL=wss://mainnet.infura.io/ws/v3/<YOUR_API_KEY>
 
 ![image](https://github.com/tannerang/FinalProject/assets/57789692/d4211137-f813-4cba-885f-a7691b86cf96)
 
-為了避免指數在求導函數時過於複雜，我們令：
+為了避免 Token Weight 在指數讓導函數的表達式過於複雜，我們令：
 
 ![image](https://github.com/tannerang/FinalProject/assets/57789692/323c71ab-30f6-4fb0-a850-6ecf138065f8)
 
@@ -154,5 +154,26 @@ WEBSOCKET_URL=wss://mainnet.infura.io/ws/v3/<YOUR_API_KEY>
 
 ![image](https://github.com/tannerang/FinalProject/assets/57789692/04f48c22-b9b7-470a-80ac-2d8a6a403676)
 
+由於當 k 為浮點數時會大幅增加計算難度，故排除考慮所有情況下的權重，僅以實務上常見的權重為主
 
+一般來說，在任意 Balancer AMM 當中的任兩個 Token Weight 幾乎都會落在 20% ~ 80% 的比例之中，也就是 k 值高機率會落在 4 ~ 0.25 之間
 
+此時假設 k 為整數，得：
+
+![image](https://github.com/tannerang/FinalProject/assets/57789692/90e4e85a-6144-4247-9bcf-58601c95b441)
+
+當 `k = 1` 時：
+
+<img width="446" alt="image" src="https://github.com/tannerang/FinalProject/assets/57789692/60475e1f-5d02-4853-81fd-31fb6b3dab9c">
+
+分別將 `a, b, c, d = a1, b1, a2, b2` 代回公式，整理後可得一元二次方程式：
+
+![image](https://github.com/tannerang/FinalProject/assets/57789692/e538ad3e-727f-46d2-ba30-6da2fa4f2676)
+
+剩下步驟如數學推導後半段，此不贅述
+
+----------------------------------------------------------------------------------------------------
+
+最後可以發現，當 `k = 1` 的時候，代表兩代幣權重一致 `Wb/Wa = 1`，也與 `x * y = k` AMM 的計算過程一模一樣，故進行套利時適用代幣權重皆為 50% 的 Balancer AMM。惟 `k = 2, 3, 4` 時，公式化簡後會變成一元三次、一元四次、一元五次方程式，無法直接帶入公式解求根，故合約不支援其他 k 值的運算
+
+**以上說明了注意事項第三點 Balancer AMM 僅適用代幣權重皆為 50% 的池子原因**
