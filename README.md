@@ -141,18 +141,17 @@ WEBSOCKET_URL=wss://mainnet.infura.io/ws/v3/<YOUR_API_KEY>
 
 ![image](https://github.com/tannerang/FinalProject/assets/57789692/323c71ab-30f6-4fb0-a850-6ecf138065f8)
 
-![image](https://github.com/tannerang/FinalProject/assets/57789692/d01ca255-b97c-4cdc-a6ac-07ce9778c13a)
+![image](https://github.com/tannerang/FinalProject/assets/57789692/ee9a1c29-6239-4831-a5c5-2dd4f6fd2682)
 
 再令：
 
 ![image](https://github.com/tannerang/FinalProject/assets/57789692/c12f6056-5d89-4a46-ad87-04895b64f697)
 
-![image](https://github.com/tannerang/FinalProject/assets/57789692/84b10ef2-c5f9-431c-a276-5005703352c1)
-
+![image](https://github.com/tannerang/FinalProject/assets/57789692/d3a3947a-2146-4cc8-92ee-852394a95cc7)
 
 同樣地，欲求出利潤最大時的 x 值，對上面的函數求導函數，得下：
 
-![image](https://github.com/tannerang/FinalProject/assets/57789692/04f48c22-b9b7-470a-80ac-2d8a6a403676)
+![image](https://github.com/tannerang/FinalProject/assets/57789692/7363b1e0-6cc5-4ef9-91c0-471e02a28452)
 
 由於當 k 為浮點數時會大幅增加計算難度，故排除考慮所有情況下的權重，僅以實務上常見的權重為主
 
