@@ -8,7 +8,11 @@ const contractInterface = new ethers.Interface(v2PairAbi);
 
 require('dotenv').config()
 //const provider = new ethers.providers.WebSocketProvider(process.env.WEBSOCKET_URL)
-const provider = new ethers.WebSocketProvider(process.env.WEBSOCKET_URL)
+
+// INFURA_WEBSOCKET_URL
+const provider = new ethers.WebSocketProvider(process.env.INFURA_WEBSOCKET_URL)
+// ALCHEMY_WEBSOCKET_URL
+// const provider = new ethers.WebSocketProvider(process.env.ALCHEMY_WEBSOCKET_URL)
 const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms))
 
 const main = async () => {
