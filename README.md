@@ -33,7 +33,7 @@ $ forge test
 ```
 // in .env file
 MAINNET_RPC_URL=https://eth-mainnet.g.alchemy.com/v2/<YOUR_RPC_URL>
-WEBSOCKET_URL=wss://mainnet.infura.io/ws/v3/<YOUR_API_KEY>
+INFURA_WEBSOCKET_URL=wss://mainnet.infura.io/ws/v3/<YOUR_API_KEY>
 ```
 
 ## 測試報告
